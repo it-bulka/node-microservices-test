@@ -6,6 +6,7 @@ const logger = require('./utils/logger');
 const proxy = require('express-http-proxy')
 const { notFound } = require('./middleware/notFound')
 const { errorHandler } = require('./middleware/errorHandler')
+const { authMiddleware } = require('./middleware/authMiddleware');
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -43,11 +44,26 @@ app.use('/v1/auth', proxy(process.env.IDENTITY_SERVICE_URL, {
   }
 }))
 
+app.use('/v1/posts', authMiddleware, proxy(process.env.POST_SERVICE_URL, {
+  ...proxyOptions,
+  proxyReqOptDecorator: (opts, srcReq) => {
+    opts.headers['Content-Type'] = 'application/json';
+    opts.headers['x-user-id'] = srcReq.user.userId;
+
+    return opts
+  },
+  userResDecorator: (proxyRes, proxyResData, req, res) => {
+    logger.info('Response received from Post-Server', proxyRes.statusCode);
+    return proxyResData
+  }
+}))
+
 app.use(notFound)
 app.use(errorHandler)
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   logger.info(`Listening on port ${PORT}`);
-  logger.info('Identity service is listening on the uri: ', process.env.IDENTITY_SERVICE_URL);
+  logger.info(`Identity service is listening on the uri: ${process.env.IDENTITY_SERVICE_URL}`);
+  logger.info(`Post service is listening on the uri: ${process.env.POST_SERVICE_URL}`);
 });

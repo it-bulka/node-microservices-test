@@ -8,7 +8,7 @@ const logger = new winston.createLogger({
     winston.format.splat(),
     winston.format.json(),
   ),
-  defaultMeta: { service: 'api-gateaway' },
+  defaultMeta: { service: 'post-service' },
   transports: [
     new winston.transports.Console({
       format: winston.format.combine(
