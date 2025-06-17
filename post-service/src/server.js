@@ -10,6 +10,7 @@ const mongoose = require("mongoose")
 const helmet = require('helmet')
 const cors = require('cors')
 const rateLimit = require('express-rate-limit')
+const redis = require('./utils/redisClient')
 
 mongoose
   .connect(process.env.MONGODB_URI)
@@ -31,7 +32,15 @@ app.use(helmet())
 app.use(cors())
 app.use(express.json())
 
-app.use('/api/v1/posts', sensitiveEndpointLimiter, router)
+app.use(
+  '/api/v1/posts',
+  sensitiveEndpointLimiter,
+  (req, res, next) => {
+    req.redisClient = redis
+    next()
+  },
+  router
+)
 
 app.use(notFound)
 app.use(errorHandler)

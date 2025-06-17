@@ -1,5 +1,7 @@
 const logger = require('../utils/logger');
 const { Post } = require('../models/post')
+const { invalidatePostCache } = require('../utils/invalidatePostCache')
+const mongoose = require('mongoose')
 
 const createPost = async (req, res) => {
   try {
@@ -9,6 +11,8 @@ const createPost = async (req, res) => {
       mediaIds: mediaIds || [],
       user: req.user.userId,
     })
+
+    await invalidatePostCache(req, post._id.toString())
 
     //TODO: add Redis later
     logger.info('Post successfully created')
@@ -32,21 +36,29 @@ const getAllPosts = async (req, res) => {
     const limit = parseInt(req.query.limit) || 10
     const startIndex = (page - 1) * limit
 
+    const cacheKey = `posts:${page}:${limit}`
+    const cachedPosts = await req.redisClient.get(cacheKey)
+    if(cachedPosts) {
+      return res.status(200).json(JSON.parse(cachedPosts))
+    }
+
     const posts = await Post.find()
       .sort({ createdAt: -1 })
       .skip(startIndex)
       .limit(limit)
 
     const totalPostsCount = await Post.countDocuments({})
-
-    //TODO: Add Redis cache
-    return res.status(200).json({
+    const result = {
       success: true,
       posts: posts,
       totalPosts: totalPostsCount,
       totalPages: Math.ceil(totalPostsCount / limit),
       currentPage: page
-    })
+    }
+
+    await req.redisClient.setex(cacheKey, 600, JSON.stringify(result))
+    return res.status(200).json(result)
+
   } catch (err) {
     logger.warn('Failed to get all Posts', { err });
     return res.status(400).send({
@@ -59,22 +71,33 @@ const getAllPosts = async (req, res) => {
 const getPostById = async (req, res) => {
   try {
     //TODO: add Redis cache
-    const postId = req.params.postId
-    const post = await Post.findById(postId)
+    const postId = req.params.id
+    const cacheKey = `posts:${postId}`
+    const cachedPost = await req.redisClient.get(cacheKey)
+    if(cachedPost) {
+      return res.status(200).json({
+        success: true,
+        post: JSON.parse(cachedPost)
+      })
+    }
+
+    const post = await Post.findOne({ _id: new mongoose.Types.ObjectId(postId) })
 
     if (!post) {
+      logger.info(`Post ${postId} not found`)
       return res.status(404).json({
         success: false,
         message: 'Post not found'
       })
     }
 
+    await req.redisClient.setex(cacheKey, 600, JSON.stringify(post))
     return res.status(200).json({
       success: true,
       post
     })
   } catch (err) {
-    logger.warn('Failed to get Post', err);
+    logger.warn('Failed to get Post', { err });
     return res.status(400).send({
       success: false,
       message: 'Failed to get Post'
@@ -84,17 +107,20 @@ const getPostById = async (req, res) => {
 
 const deletePost = async (req, res) => {
   try {
-    //TODO: add Redis cache
+
     const post = await Post.deleteOne({
       _id: req.params.id,
       user: req.user.userId
     })
+
     if (!post) {
       return res.status(404).json({
         success: false,
         message: 'Post not found'
       })
     }
+
+    await invalidatePostCache(req, req.params.id)
 
     return res.status(200).json({
       success: true,

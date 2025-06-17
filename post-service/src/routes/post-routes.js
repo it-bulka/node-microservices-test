@@ -11,7 +11,7 @@ const {
 router.use(authenticateRequest);
 
 router.post('/create', createPost);
-router.get('/all-posts', getAllPosts);
+router.get('/all', getAllPosts);
 router.get('/:id', getPostById);
 router.delete('/:id', deletePost);
 
