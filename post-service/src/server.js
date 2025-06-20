@@ -11,6 +11,7 @@ const helmet = require('helmet')
 const cors = require('cors')
 const rateLimit = require('express-rate-limit')
 const redis = require('./utils/redisClient')
+const { connectRabbitMQ } = require('./utils/rabbitmq')
 
 mongoose
   .connect(process.env.MONGODB_URI)
@@ -45,10 +46,20 @@ app.use(
 app.use(notFound)
 app.use(errorHandler)
 
-app.listen(process.env.PORT, () => {
-  logger.info(`Post Server started on port ${process.env.PORT}`);
-})
+const startServer = async () => {
+  try {
+    await connectRabbitMQ()
+    app.listen(process.env.PORT, () => {
+      logger.info(`Post Server started on port ${process.env.PORT}`);
+    })
+  } catch (err) {
+    logger.error(`Failed to connect to server`)
+    process.exit(1)
+  }
+}
+
+startServer()
 
 process.on('unhandledRejection', (reason, promise) => {
-  logger.info(`Unhandled Rejection at ${promise}, "reason": ${reason}`);
+  logger.error(`Unhandled Rejection at ${promise}, "reason": ${reason}`)
 })

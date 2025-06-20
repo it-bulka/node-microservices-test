@@ -2,6 +2,7 @@ const logger = require('../utils/logger');
 const { Post } = require('../models/post')
 const { invalidatePostCache } = require('../utils/invalidatePostCache')
 const mongoose = require('mongoose')
+const { publishEvent } = require('../utils/rabbitmq')
 
 const createPost = async (req, res) => {
   try {
@@ -70,7 +71,6 @@ const getAllPosts = async (req, res) => {
 
 const getPostById = async (req, res) => {
   try {
-    //TODO: add Redis cache
     const postId = req.params.id
     const cacheKey = `posts:${postId}`
     const cachedPost = await req.redisClient.get(cacheKey)
@@ -107,8 +107,7 @@ const getPostById = async (req, res) => {
 
 const deletePost = async (req, res) => {
   try {
-
-    const post = await Post.deleteOne({
+    const post = await Post.findOneAndDelete({
       _id: req.params.id,
       user: req.user.userId
     })
@@ -119,7 +118,12 @@ const deletePost = async (req, res) => {
         message: 'Post not found'
       })
     }
-
+    console.log('deleted post', post)
+    await publishEvent('post.deleted', {
+      postId: post._id,
+      userId: post.user,
+      mediaIds: post.mediaIds
+    })
     await invalidatePostCache(req, req.params.id)
 
     return res.status(200).json({

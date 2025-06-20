@@ -8,6 +8,8 @@ const router = require('./routes/medis-routes')
 const mongoose = require('mongoose')
 const { notFound } = require('./middleware/notFound')
 const { errorHandler } = require('./middleware/errorHandler')
+const { connectRabbitMQ, consumeEvent } = require('./utils/rabbitmq')
+const { handledPostDeleted } = require('./utils/handledPostDeleted')
 
 mongoose
   .connect(process.env.MONGODB_URI)
@@ -41,9 +43,22 @@ app.use('/api/v1/medias', sensitiveEndpointLimiter, router)
 app.use(notFound)
 app.use(errorHandler)
 
-app.listen(process.env.PORT, () => {
-  logger.info(`Server started on port ${process.env.PORT}`)
-})
+const startServer = async () => {
+  try {
+    await connectRabbitMQ()
+
+    await consumeEvent('post.deleted', handledPostDeleted)
+
+    app.listen(process.env.PORT, () => {
+      logger.info(`Server started on port ${process.env.PORT}`)
+    })
+  } catch (err) {
+    logger.error(`Failed to connect to server: ${err.message} at: ${err.stack}`)
+    process.exit(1)
+  }
+}
+
+startServer()
 
 process.on('unhandledRejection', (reason, promise) => {
   logger.info(`Unhandled Rejection at ${JSON.stringify(promise, null, 2)}, "reason": ${JSON.stringify(reason, null, 2)}`)
